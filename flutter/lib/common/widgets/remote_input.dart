@@ -10,6 +10,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/input_model.dart';
+import 'package:flutter_hbb/utils/touch_scroll_accumulator.dart';
 
 import './gestures.dart';
 
@@ -102,6 +103,8 @@ class _RawTouchGestureDetectorRegionState
   // `onDoubleTap()` does not provide the position of the tap event.
   Offset _lastPosOfDoubleTapDown = Offset.zero;
   bool _touchModePanStarted = false;
+  bool _scrollingWithOneFinger = false;
+  final _touchScroll = TouchScrollAccumulator();
   Offset _doubleFinerTapPosition = Offset.zero;
 
   // For mouse mode, we need to block the events when the cursor is in a blocked area.
@@ -116,6 +119,15 @@ class _RawTouchGestureDetectorRegionState
   bool get handleTouch => (isDesktop || isWebDesktop) || ffiModel.touchMode;
   SessionID get sessionId => ffi.sessionId;
   bool get canvasLocked => isMobile && ffi.canvasModel.locked;
+  bool get useOneFingerScrolling =>
+      isAndroid &&
+      ffiModel.touchMode &&
+      ffiModel.isPeerWindows &&
+      !widget.isCamera &&
+      !inputModel.isViewOnly &&
+      !inputModel.relativeMouseMode.value &&
+      !isSpecialHoldDragActive &&
+      bind.mainGetLocalOption(key: kOptionAndroidTouchScroll) != 'N';
 
   @override
   Widget build(BuildContext context) {
@@ -359,6 +371,17 @@ class _RawTouchGestureDetectorRegionState
     if (isNotTouchBasedDevice()) {
       return;
     }
+    if (useOneFingerScrolling) {
+      final position = lastTapDownDetails?.localPosition ?? d.localPosition;
+      if (ffi.cursorModel.shouldBlock(position.dx, position.dy) ||
+          !ffi.cursorModel.isInRemoteRect(position)) {
+        return;
+      }
+      _scrollingWithOneFinger = true;
+      _touchScroll.reset();
+      await ffi.cursorModel.move(position.dx, position.dy);
+      return;
+    }
     if (handleTouch) {
       if (lastTapDownDetails != null) {
         await ffi.cursorModel.move(lastTapDownDetails.localPosition.dx,
@@ -411,6 +434,12 @@ class _RawTouchGestureDetectorRegionState
     if (ffi.cursorModel.shouldBlock(d.localPosition.dx, d.localPosition.dy)) {
       return;
     }
+    if (_scrollingWithOneFinger) {
+      if (inputModel.isViewOnly) return;
+      final ticks = _touchScroll.consume(d.delta.dy);
+      if (ticks != 0) await inputModel.scroll(ticks);
+      return;
+    }
     if (handleTouch && !_touchModePanStarted) {
       return;
     }
@@ -423,6 +452,11 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onOneFingerPanEnd(DragEndDetails d) async {
+    if (_scrollingWithOneFinger) {
+      _scrollingWithOneFinger = false;
+      _touchScroll.reset();
+      return;
+    }
     _touchModePanStarted = false;
     if (isNotTouchBasedDevice()) {
       return;
@@ -443,12 +477,16 @@ class _RawTouchGestureDetectorRegionState
   // stuck in the "started" state and cause issues such as the Magic Mouse
   // double-click problem on iPad with magic mouse.
   onOneFingerPanCancel() {
+    _scrollingWithOneFinger = false;
+    _touchScroll.reset();
     _touchModePanStarted = false;
   }
 
   // scale + pan event
   onTwoFingerScaleStart(ScaleStartDetails d) {
     _lastTapDownDetails = null;
+    _scrollingWithOneFinger = false;
+    _touchScroll.reset();
     if (isNotTouchBasedDevice()) {
       return;
     }
