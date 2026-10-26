@@ -82,6 +82,9 @@ jobs:
           if ! compgen -G '/usr/lib/llvm-*/lib/libclang.so*' >/dev/null; then
             packages+=(libclang-dev)
           fi
+          if [[ ! -f /usr/include/bits/libc-header-start.h ]]; then
+            packages+=(gcc-multilib g++-multilib)
+          fi
           if [[ ! -x "${JAVA_HOME_17_X64:-/usr/lib/jvm/java-17-openjdk-amd64}/bin/java" ]]; then
             packages+=(openjdk-17-jdk-headless)
           fi
