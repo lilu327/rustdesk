@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/model.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
+import 'package:flutter_hbb/utils/touch_scroll_accumulator.dart';
 import 'package:get/get.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 
@@ -58,6 +60,12 @@ class _GestureHelpState extends State<GestureHelp> {
   late int _selectedIndex;
   late bool _touchMode;
   final VirtualMouseMode _virtualMouseMode;
+  bool _oneFingerScrolling =
+      bind.mainGetLocalOption(key: kOptionAndroidTouchScroll) != 'N';
+
+  bool get _supportsOneFingerScrolling =>
+      isAndroid &&
+      widget.inputModel?.parent.target?.ffiModel.isPeerWindows == true;
 
   _GestureHelpState(bool touchMode, VirtualMouseMode virtualMouseMode)
       : _virtualMouseMode = virtualMouseMode {
@@ -121,6 +129,23 @@ class _GestureHelpState extends State<GestureHelp> {
                           });
                         },
                       ),
+                      if (_touchMode && _supportsOneFingerScrolling)
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text('${translate("One-Finger Move")} → '
+                              '${translate("Mouse Wheel")}'),
+                          value: _oneFingerScrolling,
+                          onChanged: (value) async {
+                            if (value == null) return;
+                            await bind.mainSetLocalOption(
+                                key: kOptionAndroidTouchScroll,
+                                value: value ? 'Y' : 'N');
+                            if (mounted) {
+                              setState(() => _oneFingerScrolling = value);
+                            }
+                          },
+                        ),
                       Transform.translate(
                         offset: const Offset(-10.0, 0.0),
                         child: Row(
@@ -295,7 +320,10 @@ class _GestureHelpState extends State<GestureHelp> {
                               width,
                               GestureIcons.iconGestureFSwipeRight,
                               translate("One-Finger Move"),
-                              translate("Mouse Drag")),
+                              translate(_supportsOneFingerScrolling &&
+                                      _oneFingerScrolling
+                                  ? "Mouse Wheel"
+                                  : "Mouse Drag")),
                           GestureInfo(
                               width,
                               GestureIcons.iconGestureFThreeFingers,
